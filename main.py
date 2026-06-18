@@ -1,3 +1,4 @@
+import os
 import time
 from io import BytesIO
 from pathlib import Path
@@ -9,7 +10,8 @@ from markitdown import MarkItDown
 
 app = FastAPI(title="MarkItDown API", version="0.1.0", description="Convert files to Markdown — unlimited & free")
 
-app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
+origins = [o.strip() for o in os.getenv("CORS_ORIGINS", "http://localhost:3000").split(",") if o.strip()]
+app.add_middleware(CORSMiddleware, allow_origins=origins, allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
 
 md = MarkItDown()
 
