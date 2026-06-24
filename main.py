@@ -18,15 +18,17 @@ from slowapi.util import get_remote_address
 
 DATABASE_URL = os.getenv("DATABASE_URL", "")
 _pool = None
-_config = {}
 
-DEFAULT_CONFIG = {
+CONFIG = {
     "rate_limit_health": os.getenv("RATE_LIMIT_HEALTH", "30/minute"),
     "rate_limit_convert": os.getenv("RATE_LIMIT_CONVERT", "10/minute"),
     "max_file_size": os.getenv("MAX_FILE_SIZE", "50000000"),
-    "allowed_hosts": os.getenv("ALLOWED_HOSTS", "localhost,127.0.0.1"),
-    "cors_origins": os.getenv("CORS_ORIGINS", "http://localhost:3000"),
+    "allowed_hosts": os.getenv("ALLOWED_HOSTS", "*"),
 }
+
+
+def cfg(key: str) -> str:
+    return CONFIG[key]
 
 
 # ---------------------------------------------------------------------------
@@ -50,34 +52,7 @@ async def init_db():
                 created_at TIMESTAMPTZ DEFAULT NOW()
             )
         """)
-        await conn.execute("""
-            CREATE TABLE IF NOT EXISTS config (
-                key TEXT PRIMARY KEY,
-                value TEXT NOT NULL,
-                updated_at TIMESTAMPTZ DEFAULT NOW()
-            )
-        """)
-        for key, val in DEFAULT_CONFIG.items():
-            await conn.execute(
-                "INSERT INTO config (key, value) VALUES ($1, $2) ON CONFLICT (key) DO NOTHING",
-                key, val,
-            )
 
-
-async def load_config():
-    global _config
-    _config = dict(DEFAULT_CONFIG)
-    p = await get_pool()
-    if not p:
-        return
-    async with p.acquire() as conn:
-        rows = await conn.fetch("SELECT key, value FROM config")
-        for row in rows:
-            _config[row["key"]] = row["value"]
-
-
-def cfg(key: str) -> str:
-    return _config.get(key, DEFAULT_CONFIG[key])
 
 
 async def increment_counter():
@@ -120,7 +95,6 @@ app.add_middleware(CORSMiddleware, allow_origins=cors_origins, allow_credentials
 @app.on_event("startup")
 async def startup():
     await init_db()
-    await load_config()
 
 
 @app.on_event("shutdown")
@@ -137,7 +111,7 @@ async def shutdown():
 @app.middleware("http")
 async def security_headers(request: Request, call_next: Callable[[Request], Awaitable]) -> PlainTextResponse | JSONResponse:
     allowed = [h.strip() for h in cfg("allowed_hosts").split(",") if h.strip()]
-    if allowed and request.url.hostname not in allowed:
+    if allowed and "*" not in allowed and request.url.hostname not in allowed:
         return PlainTextResponse("Invalid Host", status_code=400)
     response = await call_next(request)
     response.headers["X-Content-Type-Options"] = "nosniff"
